@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirmacion de Envio</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0d1117;font-family:Arial,Helvetica,sans-serif;color:#c9d1d9;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117;">
+    <tr>
+      <td align="center" style="padding:24px 16px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#161b22;border-radius:8px;overflow:hidden;">
+          <!-- Header -->
+          <tr>
+            <td style="background-color:#2dd4a8;padding:28px 32px;text-align:center;">
+              <h1 style="margin:0;font-size:22px;color:#0d1117;font-weight:700;">{{conferenceName}}</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px;">
+              <h2 style="margin:0 0 16px;font-size:20px;color:#e6edf3;font-weight:600;">Envio recibido correctamente</h2>
+              <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#c9d1d9;">
+                Su articulo ha sido registrado exitosamente en el sistema de la conferencia. A continuacion encontrara los detalles de su envio.
+              </p>
+              <!-- Tracking code card -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+                <tr>
+                  <td style="background-color:#0d1117;border:1px solid #30363d;border-radius:6px;padding:20px;text-align:center;">
+                    <p style="margin:0 0 4px;font-size:13px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;">Codigo de seguimiento</p>
+                    <p style="margin:0;font-size:28px;font-weight:700;color:#2dd4a8;letter-spacing:2px;">{{trackingCode}}</p>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td style="background-color:#0d1117;border:1px solid #30363d;border-radius:6px;padding:16px;">
+                    <p style="margin:0 0 4px;font-size:13px;color:#8b949e;">Titulo del articulo</p>
+                    <p style="margin:0;font-size:15px;color:#e6edf3;font-weight:600;">{{title}}</p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#c9d1d9;">
+                Conserve su codigo de seguimiento para consultar el estado de su envio en cualquier momento. Le notificaremos cuando haya actualizaciones sobre el proceso de revision.
+              </p>
+              <!-- CTA button -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="{{appUrl}}" target="_blank" style="display:inline-block;background-color:#2dd4a8;color:#0d1117;font-size:15px;font-weight:600;text-decoration:none;padding:12px 32px;border-radius:6px;">
+                      Consultar estado del envio
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#0d1117;border-top:1px solid #30363d;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 8px;font-size:13px;color:#8b949e;">
+                Este es un mensaje automatico de <strong style="color:#c9d1d9;">{{conferenceName}}</strong>.
+              </p>
+              <a href="{{appUrl}}" target="_blank" style="font-size:13px;color:#2dd4a8;text-decoration:none;">{{appUrl}}</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
