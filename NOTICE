@@ -1,0 +1,25 @@
+OpenPapers
+Copyright (c) 2026 TTPSEC SPA
+
+Este software se distribuye bajo la Licencia MIT.
+Ver el archivo LICENSE para más detalles.
+
+Este proyecto incluye las siguientes dependencias de terceros:
+
+Backend:
+  - Express (MIT) — https://expressjs.com
+  - better-sqlite3 (MIT) — https://github.com/WiseLibs/better-sqlite3
+  - jsonwebtoken (MIT) — https://github.com/auth0/node-jsonwebtoken
+  - bcrypt (MIT) — https://github.com/kelektiv/node.bcrypt.js
+  - Zod (MIT) — https://zod.dev
+  - Multer (MIT) — https://github.com/expressjs/multer
+  - Nodemailer (MIT) — https://nodemailer.com
+  - cors (MIT) — https://github.com/expressjs/cors
+  - dotenv (BSD-2-Clause) — https://github.com/motdotla/dotenv
+
+Frontend:
+  - React (MIT) — https://react.dev
+  - React Router (MIT) — https://reactrouter.com
+  - Vite (MIT) — https://vite.dev
+  - Tailwind CSS (MIT) — https://tailwindcss.com
+  - Lucide React (ISC) — https://lucide.dev
