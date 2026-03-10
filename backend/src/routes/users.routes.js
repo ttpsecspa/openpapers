@@ -102,6 +102,7 @@ router.put('/:id', validate(userSchema.partial()), async (req, res, next) => {
   try {
     const db = getDb();
     const userId = parseInt(req.params.id, 10);
+    if (isNaN(userId)) throw new ValidationError('ID inválido');
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     if (!user) throw new NotFoundError('Usuario no encontrado');
 
@@ -139,7 +140,7 @@ router.post('/invite', validate(inviteSchema), async (req, res, next) => {
 
     if (!user) {
       tempPassword = generateRandomPassword();
-      const hash = await bcrypt.hash(tempPassword, 10);
+      const hash = await bcrypt.hash(tempPassword, 12);
       const result = db.prepare(
         'INSERT INTO users (email, password_hash, full_name, affiliation, role) VALUES (?, ?, ?, ?, ?)'
       ).run(data.email, hash, data.full_name, data.affiliation || null, 'reviewer');

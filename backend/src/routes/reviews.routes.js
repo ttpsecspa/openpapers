@@ -92,11 +92,20 @@ router.put('/:id', authorize('superadmin', 'admin', 'reviewer'), (req, res, next
   try {
     const db = getDb();
     const reviewId = parseInt(req.params.id, 10);
+    if (isNaN(reviewId)) throw new ValidationError('ID inválido');
     const review = db.prepare('SELECT * FROM reviews WHERE id = ?').get(reviewId);
 
     if (!review) throw new NotFoundError('Revisión no encontrada');
     if (review.reviewer_id !== req.user.id && req.user.role === 'reviewer') {
       throw new ForbiddenError();
+    }
+
+    // CWE-863: verificar que la asignación aún existe (puede haber sido revocada)
+    if (req.user.role === 'reviewer') {
+      const assignment = db.prepare(
+        'SELECT id FROM review_assignments WHERE submission_id = ? AND reviewer_id = ?'
+      ).get(review.submission_id, req.user.id);
+      if (!assignment) throw new ForbiddenError('Tu asignación fue revocada');
     }
 
     const parsed = reviewSchema.partial().safeParse(req.body);

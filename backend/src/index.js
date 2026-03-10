@@ -68,8 +68,21 @@ app.get('/uploads/:filename', authenticate, (req, res) => {
     if (!assigned) {
       return res.status(403).json({ error: 'No tienes acceso a este archivo' });
     }
+  } else if (req.user.role === 'admin') {
+    // CWE-863: admin solo descarga archivos de sus conferencias
+    const isChair = db.prepare(
+      "SELECT id FROM conference_members WHERE conference_id = ? AND user_id = ? AND role = 'chair'"
+    ).get(submission.conference_id, req.user.id);
+    if (!isChair) {
+      return res.status(403).json({ error: 'No tienes acceso a este archivo' });
+    }
   }
 
+  // CWE-116: Content-Disposition para forzar descarga y sanitizar nombre
+  const safeName = (submission.file_original_name || filename).replace(/[^\w.\-]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.sendFile(filePath);
 });
 
@@ -98,15 +111,24 @@ app.get('/api/dashboard/stats', authenticate, authorize('superadmin', 'admin'), 
   res.json(stats);
 }));
 
-// Auto-assign
+// Auto-assign (CWE-863: admin solo puede auto-asignar en sus conferencias)
 app.post('/api/dashboard/auto-assign', authenticate, authorize('superadmin', 'admin'), asyncHandler((req, res) => {
   const { conference_id } = req.body;
   if (!conference_id) return res.status(400).json({ error: 'conference_id requerido' });
+
+  if (req.user.role === 'admin') {
+    const db = getDb();
+    const isChair = db.prepare(
+      "SELECT id FROM conference_members WHERE conference_id = ? AND user_id = ? AND role = 'chair'"
+    ).get(conference_id, req.user.id);
+    if (!isChair) return res.status(403).json({ error: 'No tienes acceso a esta conferencia' });
+  }
+
   const result = autoAssign(conference_id);
   res.json(result);
 }));
 
-// Email log
+// Email log (CWE-863: admin solo ve emails de sus conferencias)
 app.get('/api/dashboard/email-log', authenticate, authorize('superadmin', 'admin'), asyncHandler((req, res) => {
   const db = getDb();
   const { conference_id, template, status, page = '1' } = req.query;
@@ -118,6 +140,23 @@ app.get('/api/dashboard/email-log', authenticate, authorize('superadmin', 'admin
   let countQuery = 'SELECT COUNT(*) as total FROM email_log WHERE 1=1';
   const params = [];
   const countParams = [];
+
+  // Admin solo ve emails de conferencias donde es chair
+  if (req.user.role === 'admin') {
+    const chairConfs = db.prepare(
+      "SELECT conference_id FROM conference_members WHERE user_id = ? AND role = 'chair'"
+    ).all(req.user.id).map(r => r.conference_id);
+
+    if (chairConfs.length === 0) {
+      return res.json({ logs: [], pagination: { page: pageNum, limit, total: 0, pages: 0 } });
+    }
+
+    const placeholders = chairConfs.map(() => '?').join(',');
+    query += ` AND conference_id IN (${placeholders})`;
+    countQuery += ` AND conference_id IN (${placeholders})`;
+    params.push(...chairConfs);
+    countParams.push(...chairConfs);
+  }
 
   if (conference_id) {
     query += ' AND conference_id = ?';

@@ -1,12 +1,23 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { z } = require('zod');
 const { getDb } = require('../database/init');
+const config = require('../config');
 const { authenticate, authorize } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 const { validate } = require('../middleware/validate');
 const { generateTrackingCode } = require('../utils/helpers');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 const mailer = require('../services/mailer');
+
+// CWE-400: limpiar archivo subido si la validación falla
+function cleanupUploadedFile(req) {
+  if (req.file) {
+    const filePath = path.resolve(config.app.uploadDir, req.file.filename);
+    fs.unlink(filePath, () => {}); // fire-and-forget
+  }
+}
 
 const router = express.Router();
 
@@ -37,6 +48,7 @@ router.post('/', upload.single('file'), (req, res, next) => {
     });
 
     if (!parsed.success) {
+      cleanupUploadedFile(req);
       const errors = parsed.error.issues.map(i => ({ field: i.path.join('.'), message: i.message }));
       throw new ValidationError('Datos inválidos', errors);
     }
@@ -45,10 +57,14 @@ router.post('/', upload.single('file'), (req, res, next) => {
     const db = getDb();
 
     const conference = db.prepare('SELECT * FROM conferences WHERE id = ? AND is_active = 1').get(data.conference_id);
-    if (!conference) throw new NotFoundError('Conferencia no encontrada o cerrada');
+    if (!conference) {
+      cleanupUploadedFile(req);
+      throw new NotFoundError('Conferencia no encontrada o cerrada');
+    }
 
     const now = new Date().toISOString().split('T')[0];
     if (now > conference.submission_deadline) {
+      cleanupUploadedFile(req);
       throw new ValidationError('El plazo de envío ha finalizado');
     }
 
@@ -209,6 +225,7 @@ dashboardRouter.get('/:id', (req, res, next) => {
   try {
     const db = getDb();
     const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) throw new ValidationError('ID inválido');
 
     const submission = db.prepare(`
       SELECT s.*, c.name as conference_name, c.is_double_blind, t.name as track_name
@@ -220,11 +237,17 @@ dashboardRouter.get('/:id', (req, res, next) => {
 
     if (!submission) throw new NotFoundError('Envío no encontrado');
 
+    // CWE-863: verificar acceso por rol
     if (req.user.role === 'reviewer') {
       const assigned = db.prepare(
         'SELECT id FROM review_assignments WHERE submission_id = ? AND reviewer_id = ?'
       ).get(id, req.user.id);
       if (!assigned) throw new ForbiddenError();
+    } else if (req.user.role === 'admin') {
+      const isChair = db.prepare(
+        "SELECT id FROM conference_members WHERE conference_id = ? AND user_id = ? AND role = 'chair'"
+      ).get(submission.conference_id, req.user.id);
+      if (!isChair) throw new ForbiddenError('No tienes acceso a esta conferencia');
     }
 
     const reviews = db.prepare(`
@@ -265,6 +288,7 @@ dashboardRouter.patch('/:id/status', authorize('superadmin', 'admin'), (req, res
   try {
     const db = getDb();
     const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) throw new ValidationError('ID inválido');
     const { status, decision_notes } = req.body;
 
     const validStatuses = ['submitted', 'under_review', 'accepted', 'rejected', 'revision_requested', 'withdrawn', 'camera_ready'];
@@ -278,6 +302,14 @@ dashboardRouter.patch('/:id/status', authorize('superadmin', 'admin'), (req, res
       WHERE s.id = ?
     `).get(id);
     if (!submission) throw new NotFoundError();
+
+    // CWE-863: admin solo puede cambiar status de sus conferencias
+    if (req.user.role === 'admin') {
+      const isChair = db.prepare(
+        "SELECT id FROM conference_members WHERE conference_id = ? AND user_id = ? AND role = 'chair'"
+      ).get(submission.conference_id, req.user.id);
+      if (!isChair) throw new ForbiddenError('No tienes acceso a esta conferencia');
+    }
 
     db.prepare(
       'UPDATE submissions SET status = ?, decision_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
@@ -327,6 +359,7 @@ dashboardRouter.patch('/:id/assign', authorize('superadmin', 'admin'), (req, res
   try {
     const db = getDb();
     const submissionId = parseInt(req.params.id, 10);
+    if (isNaN(submissionId)) throw new ValidationError('ID inválido');
     const { reviewer_ids, deadline } = req.body;
 
     if (!Array.isArray(reviewer_ids) || reviewer_ids.length === 0) {
@@ -339,6 +372,14 @@ dashboardRouter.patch('/:id/assign', authorize('superadmin', 'admin'), (req, res
       WHERE s.id = ?
     `).get(submissionId);
     if (!submission) throw new NotFoundError();
+
+    // CWE-863: admin solo puede asignar revisores en sus conferencias
+    if (req.user.role === 'admin') {
+      const isChair = db.prepare(
+        "SELECT id FROM conference_members WHERE conference_id = ? AND user_id = ? AND role = 'chair'"
+      ).get(submission.conference_id, req.user.id);
+      if (!isChair) throw new ForbiddenError('No tienes acceso a esta conferencia');
+    }
 
     const authors = JSON.parse(submission.authors_json || '[]');
     const authorEmails = authors.map(a => a.email?.toLowerCase()).filter(Boolean);

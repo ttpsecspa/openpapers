@@ -1,8 +1,18 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { getDb } = require('../database/init');
 const { NotFoundError } = require('../utils/errors');
 
 const router = express.Router();
+
+// Rate limiter estricto para tracking code (CWE-200: anti-enumeración)
+const trackingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Demasiados intentos de consulta, intenta en 15 minutos' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 router.get('/conferences', (req, res, next) => {
   try {
@@ -42,7 +52,7 @@ router.get('/conferences/:slug', (req, res, next) => {
   }
 });
 
-router.get('/submissions/track/:code', (req, res, next) => {
+router.get('/submissions/track/:code', trackingLimiter, (req, res, next) => {
   try {
     const db = getDb();
     const submission = db.prepare(`
