@@ -63,7 +63,7 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
       throw new ValidationError('El email ya está registrado');
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
     const result = db.prepare(
       'INSERT INTO users (email, password_hash, full_name, affiliation, role) VALUES (?, ?, ?, ?, ?)'
     ).run(email, passwordHash, full_name, affiliation || null, 'author');

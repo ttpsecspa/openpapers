@@ -80,7 +80,7 @@ router.post('/', validate(userSchema), async (req, res, next) => {
     if (existing) throw new ValidationError('El email ya está registrado');
 
     const password = data.password || generateRandomPassword();
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const result = db.prepare(
       'INSERT INTO users (email, password_hash, full_name, affiliation, role, is_active) VALUES (?, ?, ?, ?, ?, ?)'
@@ -114,7 +114,7 @@ router.put('/:id', validate(userSchema.partial()), async (req, res, next) => {
     let passwordHash = user.password_hash;
     if (password) {
       if (password.length < 8) throw new ValidationError('La contraseña debe tener al menos 8 caracteres');
-      passwordHash = await bcrypt.hash(password, 10);
+      passwordHash = await bcrypt.hash(password, 12);
     }
 
     db.prepare(`

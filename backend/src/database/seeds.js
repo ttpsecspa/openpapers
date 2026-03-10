@@ -13,7 +13,7 @@ async function runSeeds() {
 
   console.log('Running seeds...');
 
-  const passwordHash = await bcrypt.hash(config.admin.password, 10);
+  const passwordHash = await bcrypt.hash(config.admin.password, 12);
   const adminResult = db.prepare(
     'INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)'
   ).run(config.admin.email, passwordHash, config.admin.name, 'superadmin');
@@ -52,12 +52,12 @@ async function runSeeds() {
     'INSERT INTO conference_members (conference_id, user_id, role) VALUES (?, ?, ?)'
   ).run(confId, adminId, 'chair');
 
-  const reviewer1Hash = await bcrypt.hash('Reviewer123!', 10);
+  const reviewer1Hash = await bcrypt.hash('Reviewer123!', 12);
   const r1 = db.prepare(
     'INSERT INTO users (email, password_hash, full_name, affiliation, role) VALUES (?, ?, ?, ?, ?)'
   ).run('reviewer1@openpapers.local', reviewer1Hash, 'María García', 'Universidad de Chile', 'reviewer');
 
-  const reviewer2Hash = await bcrypt.hash('Reviewer123!', 10);
+  const reviewer2Hash = await bcrypt.hash('Reviewer123!', 12);
   const r2 = db.prepare(
     'INSERT INTO users (email, password_hash, full_name, affiliation, role) VALUES (?, ?, ?, ?, ?)'
   ).run('reviewer2@openpapers.local', reviewer2Hash, 'Carlos López', 'USACH', 'reviewer');

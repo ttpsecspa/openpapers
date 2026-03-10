@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const config = require('./config');
 const { getDb } = require('./database/init');
@@ -19,13 +21,31 @@ const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next
 
 const app = express();
 
+// Security headers (CWE-16)
+app.use(helmet({
+  contentSecurityPolicy: false, // Manejado por Nginx en producción
+  crossOriginEmbedderPolicy: false,
+}));
+
 app.use(cors({
   origin: config.app.allowedOrigins,
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
+// Body size limits (CWE-770)
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Rate limiting global (CWE-307)
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 300,                  // 300 requests por ventana
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes, intenta de nuevo más tarde' },
+}));
+
+// Upload IDOR fix (CWE-862): verificar que el usuario tiene acceso al archivo
 app.get('/uploads/:filename', authenticate, (req, res) => {
   const filename = path.basename(req.params.filename);
   const filePath = path.resolve(config.app.uploadDir, filename);
@@ -33,11 +53,35 @@ app.get('/uploads/:filename', authenticate, (req, res) => {
   if (!filePath.startsWith(uploadDir)) {
     return res.status(403).json({ error: 'Acceso denegado' });
   }
+
+  // Verificar que el archivo pertenece a un paper al que el usuario tiene acceso
+  const db = getDb();
+  const submission = db.prepare('SELECT * FROM submissions WHERE file_path = ?').get(filename);
+  if (!submission) {
+    return res.status(404).json({ error: 'Archivo no encontrado' });
+  }
+
+  if (req.user.role === 'reviewer') {
+    const assigned = db.prepare(
+      'SELECT id FROM review_assignments WHERE submission_id = ? AND reviewer_id = ?'
+    ).get(submission.id, req.user.id);
+    if (!assigned) {
+      return res.status(403).json({ error: 'No tienes acceso a este archivo' });
+    }
+  }
+
   res.sendFile(filePath);
 });
 
+// Rate limiting estricto para auth (CWE-307)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Demasiados intentos de autenticación, intenta en 15 minutos' },
+});
+
 // Public routes
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api', publicRoutes);
 app.use('/api/submissions', submissionsPublicRouter);
 
@@ -47,8 +91,8 @@ app.use('/api/dashboard/submissions', submissionsDashboardRouter);
 app.use('/api/dashboard/reviews', reviewsRoutes);
 app.use('/api/dashboard/users', usersRoutes);
 
-// Stats
-app.get('/api/dashboard/stats', authenticate, asyncHandler((req, res) => {
+// Stats (CWE-862: requiere autorización)
+app.get('/api/dashboard/stats', authenticate, authorize('superadmin', 'admin'), asyncHandler((req, res) => {
   const conferenceId = req.query.conference_id ? parseInt(req.query.conference_id, 10) : null;
   const stats = getStats(conferenceId);
   res.json(stats);
@@ -111,10 +155,22 @@ app.get('/api/dashboard/settings', authenticate, authorize('superadmin'), asyncH
   res.json(settingsMap);
 }));
 
+// Settings mass assignment fix (CWE-915): whitelist de claves permitidas
+const ALLOWED_SETTINGS = new Set([
+  'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure',
+  'smtp_from_name', 'smtp_from_email',
+  'app_name', 'app_url', 'max_file_size_mb',
+]);
+
 app.put('/api/dashboard/settings', authenticate, authorize('superadmin'), asyncHandler((req, res) => {
   const db = getDb();
   const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
-  const entries = Object.entries(req.body);
+  const entries = Object.entries(req.body).filter(([key]) => ALLOWED_SETTINGS.has(key));
+
+  if (entries.length === 0) {
+    return res.status(400).json({ error: 'No se proporcionaron configuraciones válidas' });
+  }
+
   const tx = db.transaction(() => {
     for (const [key, value] of entries) {
       upsert.run(key, String(value));

@@ -121,7 +121,25 @@ dashboardRouter.get('/', (req, res, next) => {
       `;
       params.push(req.user.id);
       countParams.push(req.user.id);
+    } else if (req.user.role === 'admin') {
+      // Admin solo ve submissions de conferencias donde es chair (CWE-863)
+      query = `
+        SELECT s.*, c.name as conference_name, t.name as track_name
+        FROM submissions s
+        JOIN conferences c ON c.id = s.conference_id
+        LEFT JOIN tracks t ON t.id = s.track_id
+        JOIN conference_members cm ON cm.conference_id = s.conference_id
+        WHERE cm.user_id = ? AND cm.role = 'chair'
+      `;
+      countQuery = `
+        SELECT COUNT(*) as total FROM submissions s
+        JOIN conference_members cm ON cm.conference_id = s.conference_id
+        WHERE cm.user_id = ? AND cm.role = 'chair'
+      `;
+      params.push(req.user.id);
+      countParams.push(req.user.id);
     } else {
+      // superadmin ve todo
       query = `
         SELECT s.*, c.name as conference_name, t.name as track_name
         FROM submissions s
