@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  OpenPapers — Script de actualización
-#  Uso:  cd /opt/openpapers && bash deploy/update.sh
+#  OpenPapers — Script de actualización (Laravel + PHP)
+#  Uso:  cd /var/www/openpapers && sudo bash deploy/update.sh
 # ============================================================================
 set -euo pipefail
 
@@ -13,27 +13,29 @@ warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[✗]${NC} $*" >&2; }
 step() { echo -e "\n${CYAN}${BOLD}── $* ──${NC}"; }
 
-APP_DIR="/opt/openpapers"
+APP_DIR="/var/www/openpapers"
 cd "$APP_DIR"
 
-step "Actualizando OpenPapers"
-
-# ── Verificar que estamos en el directorio correcto ──────────────────────────
-if [[ ! -f "docker-compose.yml" ]]; then
-  err "No se encontró docker-compose.yml en $APP_DIR"
+# ── Verificar directorio ────────────────────────────────────────────────────
+if [[ ! -f "artisan" ]]; then
+  err "No se encontró artisan en $APP_DIR"
   exit 1
 fi
 
-# ── Backup pre-actualización ─────────────────────────────────────────────────
+# ── Backup pre-actualización ────────────────────────────────────────────────
 step "Creando backup pre-actualización"
 if [[ -f "deploy/backup.sh" ]]; then
   bash deploy/backup.sh
   log "Backup completado"
 else
-  warn "Script de backup no encontrado — continuando sin backup"
+  warn "Script de backup no encontrado"
 fi
 
-# ── Pull cambios ─────────────────────────────────────────────────────────────
+# ── Modo mantenimiento ──────────────────────────────────────────────────────
+step "Activando modo mantenimiento"
+php artisan down --retry=60
+
+# ── Pull cambios ────────────────────────────────────────────────────────────
 step "Descargando cambios"
 CURRENT=$(git rev-parse --short HEAD)
 git pull origin main
@@ -41,60 +43,43 @@ NEW=$(git rev-parse --short HEAD)
 
 if [[ "$CURRENT" == "$NEW" ]]; then
   log "Ya estás en la última versión ($CURRENT)"
-  echo -e "${YELLOW}¿Deseas reconstruir los contenedores de todas formas? (s/N)${NC}"
-  read -r REPLY
-  if [[ ! "$REPLY" =~ ^[sS]$ ]]; then
-    log "Nada que hacer"
-    exit 0
-  fi
 else
   log "Actualizado: $CURRENT → $NEW"
   git log --oneline "${CURRENT}..${NEW}"
 fi
 
-# ── Rebuild contenedores ─────────────────────────────────────────────────────
-step "Reconstruyendo contenedores"
-docker compose build --no-cache
-log "Build completado"
+# ── Actualizar dependencias ─────────────────────────────────────────────────
+step "Actualizando dependencias PHP"
+composer install --no-dev --optimize-autoloader --no-interaction
+log "Dependencias actualizadas"
 
-# ── Reiniciar servicios ──────────────────────────────────────────────────────
-step "Reiniciando servicios"
-docker compose down
-docker compose up -d
-log "Servicios reiniciados"
+# ── Migrar BD ───────────────────────────────────────────────────────────────
+step "Ejecutando migraciones"
+php artisan migrate --force
+log "Migraciones ejecutadas"
 
-# ── Health check ─────────────────────────────────────────────────────────────
-step "Verificando salud del servicio"
-echo -n "Esperando respuesta del backend"
-HEALTHY=false
-for i in $(seq 1 20); do
-  if docker compose exec -T backend wget -q --spider http://localhost:3001/api/conferences 2>/dev/null; then
-    echo ""
-    HEALTHY=true
-    break
-  fi
-  echo -n "."
-  sleep 3
-done
-echo ""
+# ── Optimizar ───────────────────────────────────────────────────────────────
+step "Optimizando para producción"
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+log "Cachés regenerados"
 
-if [[ "$HEALTHY" == "true" ]]; then
-  log "Backend respondiendo correctamente"
-else
-  err "Backend no responde después de 60 segundos"
-  warn "Revisa los logs: docker compose logs backend"
-  exit 1
-fi
+# ── Permisos ────────────────────────────────────────────────────────────────
+chown -R www-data:www-data "$APP_DIR"
+chmod -R 775 "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
 
-# ── Limpiar imágenes antiguas ────────────────────────────────────────────────
-step "Limpiando imágenes Docker antiguas"
-docker image prune -f
-log "Imágenes antiguas eliminadas"
+# ── Desactivar mantenimiento ────────────────────────────────────────────────
+step "Desactivando modo mantenimiento"
+php artisan up
+log "Sitio activo"
+
+# ── Reiniciar PHP-FPM ───────────────────────────────────────────────────────
+systemctl reload php8.3-fpm 2>/dev/null || systemctl reload php8.2-fpm 2>/dev/null || true
+log "PHP-FPM recargado"
 
 # ── Resumen ──────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}${BOLD}Actualización completada exitosamente${NC}"
+echo -e "${GREEN}${BOLD}Actualización completada${NC}"
 echo -e "  Versión: ${CYAN}$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)${NC}"
-echo -e "  Estado:  ${GREEN}Todos los servicios activos${NC}"
 echo ""
-docker compose ps
