@@ -1,168 +1,139 @@
-# Despliegue en DigitalOcean
+# Despliegue de OpenPapers
 
-Guía para desplegar OpenPapers en un Droplet de DigitalOcean con Docker Compose, SSL y backups automáticos.
+Guía para desplegar OpenPapers (Laravel 11 + MariaDB) en un VPS o hosting compartido.
 
-## Prerrequisitos
+## Opción 1: Hosting compartido (desde $3/mes)
 
-1. **Cuenta de DigitalOcean** — [registrarse](https://www.digitalocean.com/)
-2. **Dominio** con registro DNS tipo A apuntando a la IP del Droplet
-3. **Droplet Ubuntu 24.04 LTS** — mínimo 1 GB RAM / 1 vCPU ($6/mes)
+### Requisitos
+- PHP 8.2+ con extensiones: pdo_mysql, mbstring, openssl, tokenizer, curl, fileinfo
+- MariaDB 10.5+ o MySQL 8.0+
+- Acceso FTP o panel de archivos
 
-## Inicio rápido
+### Pasos
 
-### 1. Crear el Droplet
+1. **Subir archivos** — Sube todo el contenido del repositorio al `public_html` o directorio web. El directorio `public/` debe ser la raíz web.
 
-- **Imagen:** Ubuntu 24.04 LTS
-- **Plan:** Basic, 1 GB RAM / 1 vCPU / 25 GB SSD ($6/mes) — suficiente para conferencias pequeñas/medianas
-- **Región:** la más cercana a tus usuarios
-- **Autenticación:** SSH key (recomendado)
+2. **Instalar dependencias** — Si tienes acceso SSH:
+   ```bash
+   composer install --no-dev --optimize-autoloader
+   ```
+   Si no tienes SSH, sube la carpeta `vendor/` desde tu máquina local.
 
-### 2. Configurar DNS
+3. **Ejecutar instalador** — Visita `https://tudominio.com/install.php` en el navegador. El instalador te pedirá:
+   - Credenciales de MariaDB/MySQL
+   - URL del sitio
+   - Email y contraseña del administrador
+   - Configuración SMTP (opcional)
 
-Crea un registro DNS tipo A apuntando tu dominio a la IP del Droplet:
+4. **Eliminar install.php** — Por seguridad, elimina `public/install.php` después de instalar.
 
+### Configurar raíz web
+
+Si tu hosting apunta a `public_html/` pero Laravel necesita que `public/` sea la raíz:
+
+**Opción A:** Configura el dominio para que apunte a `public_html/public/`
+
+**Opción B:** Sube los archivos de Laravel fuera de `public_html/` y solo el contenido de `public/` dentro:
 ```
-Tipo: A
-Nombre: cfp (o @ para el dominio raíz)
-Valor: IP_DEL_DROPLET
-TTL: 3600
+/home/usuario/
+├── openpapers/          ← archivos Laravel (app/, config/, etc.)
+│   └── public/          ← el contenido va en public_html
+└── public_html/         ← apunta aquí → symlink o copia de public/
 ```
 
-> **Importante:** El DNS debe estar propagado antes de ejecutar el script (necesario para Let's Encrypt).
+---
 
-### 3. Conectarse al Droplet
+## Opción 2: VPS con script automatizado
+
+### Requisitos
+- Ubuntu 22.04/24.04 LTS
+- Mínimo 1 GB RAM / 1 vCPU
+- Dominio con DNS tipo A apuntando a la IP del VPS
+
+### Inicio rápido
 
 ```bash
-ssh root@IP_DEL_DROPLET
-```
-
-### 4. Ejecutar el script de instalación
-
-```bash
+ssh root@IP_DEL_VPS
 curl -fsSL https://raw.githubusercontent.com/ttpsecspa/openpapers/main/deploy/setup.sh -o setup.sh
 sudo bash setup.sh --domain cfp.tudominio.cl --email admin@tudominio.cl
 ```
 
-Con SMTP configurado:
+El script instala PHP 8.3, MariaDB, Nginx, Composer, Let's Encrypt SSL, y configura todo automáticamente.
 
-```bash
-sudo bash setup.sh \
-  --domain cfp.tudominio.cl \
-  --email admin@tudominio.cl \
-  --smtp-host smtp.gmail.com \
-  --smtp-user cfp@tudominio.cl \
-  --smtp-pass "tu_app_password"
-```
-
-### 5. ¡Listo!
-
-El script mostrará la URL, email y contraseña de administrador al finalizar.
-
-## Estructura en el servidor
+### Estructura en el servidor
 
 ```
-/opt/openpapers/
-├── data/
-│   ├── openpapers.db          # Base de datos SQLite
-│   ├── uploads/               # PDFs subidos
-│   └── backups/               # Backups diarios (7 días)
-├── backend/                   # Código del backend
-├── frontend/                  # Código del frontend
-├── nginx/default.conf         # Config Nginx con SSL
-├── docker-compose.yml         # Docker Compose
-├── .env                       # Variables de entorno (secretos)
-└── deploy/                    # Scripts de despliegue
+/var/www/openpapers/
+├── app/                    # Controladores, modelos, middleware
+├── config/                 # Configuración Laravel
+├── database/               # Migraciones y seeders
+├── public/                 # Raíz web (index.php)
+├── resources/views/        # Blade templates
+├── routes/                 # Rutas API y web
+├── storage/
+│   ├── app/submissions/    # PDFs subidos
+│   ├── backups/            # Backups diarios
+│   └── logs/               # Logs de Laravel
+├── .env                    # Variables de entorno (secretos)
+└── deploy/                 # Scripts de despliegue
 ```
 
 ## Comandos útiles
 
 | Acción | Comando |
 |--------|---------|
-| Ver logs | `cd /opt/openpapers && docker compose logs -f` |
-| Reiniciar | `cd /opt/openpapers && docker compose restart` |
-| Actualizar | `cd /opt/openpapers && bash deploy/update.sh` |
-| Backup manual | `cd /opt/openpapers && bash deploy/backup.sh` |
-| Estado | `cd /opt/openpapers && docker compose ps` |
-| Detener | `cd /opt/openpapers && docker compose down` |
+| Actualizar | `cd /var/www/openpapers && sudo bash deploy/update.sh` |
+| Backup manual | `cd /var/www/openpapers && sudo bash deploy/backup.sh` |
+| Migrar BD | `cd /var/www/openpapers && php artisan migrate --force` |
+| Limpiar cachés | `cd /var/www/openpapers && php artisan optimize:clear` |
+| Modo mantenimiento | `php artisan down` / `php artisan up` |
+| Ver logs | `tail -f /var/www/openpapers/storage/logs/laravel.log` |
+| Estado servicios | `systemctl status php8.3-fpm nginx mariadb` |
 
 ## Backups
 
 - **Automáticos:** Cada día a las 3:00 AM vía cron
-- **Ubicación:** `/opt/openpapers/data/backups/`
-- **Retención:** 7 días (los más antiguos se eliminan)
-- **Formato:** `openpapers_YYYYMMDD_HHMMSS.db.gz`
+- **Ubicación:** `storage/backups/`
+- **Retención:** 7 días
+- **Incluye:** Dump de MariaDB + archivos de submissions
 
 ### Restaurar un backup
 
 ```bash
-cd /opt/openpapers
-docker compose down
-gunzip data/backups/openpapers_20260310_030000.db.gz
-cp data/backups/openpapers_20260310_030000.db data/openpapers.db
-docker compose up -d
+cd /var/www/openpapers
+gunzip storage/backups/openpapers_20260310_030000.sql.gz
+mysql -u openpapers -p openpapers < storage/backups/openpapers_20260310_030000.sql
 ```
 
 ## SSL (HTTPS)
 
-- **Certificado:** Let's Encrypt (gratuito)
+- **Certificado:** Let's Encrypt (gratuito, solo en VPS)
 - **Renovación:** Automática cada lunes a las 4:00 AM
 - **Verificar:** `certbot certificates`
-
-Si el certificado no se obtuvo durante la instalación:
-
-```bash
-certbot certonly --standalone --domain cfp.tudominio.cl --email admin@tudominio.cl
-cd /opt/openpapers && bash deploy/setup.sh --domain cfp.tudominio.cl --email admin@tudominio.cl
-```
-
-## Actualizar
-
-```bash
-cd /opt/openpapers && bash deploy/update.sh
-```
-
-El script:
-1. Crea un backup antes de actualizar
-2. Descarga los cambios de GitHub
-3. Reconstruye los contenedores
-4. Verifica que el servicio responda
 
 ## Escalar
 
 | Escenario | Recomendación |
 |-----------|---------------|
-| < 500 submissions | 1 GB RAM / 1 vCPU ($6/mes) |
-| 500 – 2000 submissions | 2 GB RAM / 1 vCPU ($12/mes) |
-| > 2000 submissions | 4 GB RAM / 2 vCPU ($24/mes) |
+| < 500 submissions | Hosting compartido ($3-5/mes) |
+| 500 – 2000 submissions | VPS 1 GB RAM ($6/mes) |
+| > 2000 submissions | VPS 2+ GB RAM ($12+/mes) |
 
 ## Troubleshooting
 
-### El backend no arranca
+### Error 500
 ```bash
-docker compose logs backend
+tail -50 /var/www/openpapers/storage/logs/laravel.log
 ```
 
-### Error de permisos en la base de datos
+### Permisos de storage
 ```bash
-chown -R 1000:1000 /opt/openpapers/data
-docker compose restart backend
+chown -R www-data:www-data /var/www/openpapers/storage
+chmod -R 775 /var/www/openpapers/storage
 ```
 
-### Certificado SSL no se renueva
+### PHP-FPM no responde
 ```bash
-certbot renew --dry-run
-```
-
-### Puerto 80/443 ocupado
-```bash
-ss -tlnp | grep -E ':80|:443'
-# Detener el servicio que ocupa el puerto
-```
-
-### Reconstruir desde cero
-```bash
-cd /opt/openpapers
-docker compose down -v
-docker compose build --no-cache
-docker compose up -d
+systemctl restart php8.3-fpm
+systemctl status php8.3-fpm
 ```
