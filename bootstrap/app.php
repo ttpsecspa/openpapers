@@ -12,7 +12,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->append(\App\Http\Middleware\CheckInstalled::class);
+        $middleware->prepend(\App\Http\Middleware\CheckInstalled::class);
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
         $middleware->alias([
@@ -28,5 +28,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // Hide detailed errors in production (CWE-200)
         $exceptions->shouldRenderJsonWhen(function ($request) {
             return $request->is('api/*') || $request->expectsJson();
+        });
+
+        // Redirect to installer if DB is not configured
+        $exceptions->renderable(function (\Throwable $e, $request) {
+            if (($e instanceof \Illuminate\Database\QueryException || $e instanceof \PDOException)
+                && !file_exists(storage_path('installed.lock'))
+                && file_exists(public_path('install.php'))) {
+                // Raw header redirect to avoid any framework dependency
+                header('Location: /install.php');
+                exit;
+            }
         });
     })->create();

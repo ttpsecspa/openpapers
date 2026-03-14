@@ -11,8 +11,10 @@ class CheckInstalled
     {
         if (!file_exists(storage_path('installed.lock'))) {
             if (file_exists(public_path('install.php'))) {
-                return redirect('/install.php');
+                // Use raw redirect to avoid session/DB dependency
+                return response('', 302)->header('Location', '/install.php');
             }
+            abort(503, 'OpenPapers is not installed. Please upload install.php.');
         }
 
         return $next($request);
